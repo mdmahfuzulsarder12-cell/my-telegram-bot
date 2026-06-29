@@ -1,91 +1,104 @@
 import logging
 from aiogram import Bot, Dispatcher, executor, types
-from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
-# Your API Token and Admin ID
-API_TOKEN = '8924995974:AAEKVpB992nDx3oVhvIbwD4601F-ZHHqQJA'
-ADMIN_ID = 5582627293
+# 1. Configuration
+API_TOKEN = '8924995974:AAEcOT5ChY4qlEl-1hguZJ_8nNFygqUOuZQ'
+ADMIN_ID = 5582627293  
+CHANNEL_USERNAME = '@A_ToolsX'  
 
-# Configure logging
+# Setup logging
 logging.basicConfig(level=logging.INFO)
 
-# Initialize bot and dispatcher
+# Initialize Bot and Dispatcher
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher(bot)
 
-# Main Menu Keyboard (Directly Active)
+# Local memory to prevent checking the channel repeatedly
+verified_users = set()
+
+# Function to check channel membership
+async def check_channel_join(user_id):
+    if user_id in verified_users:
+        return True
+    try:
+        member = await bot.get_chat_member(chat_id=CHANNEL_USERNAME, user_id=user_id)
+        if member.status in ['member', 'administrator', 'creator']:
+            verified_users.add(user_id)  # Save to memory so it doesn't check again
+            return True
+        return False
+    except Exception:
+        return False
+
+# Inline keyboard for joining the channel
+def get_join_keyboard():
+    keyboard = InlineKeyboardMarkup()
+    btn_link = InlineKeyboardButton("📢 Join Channel", url=f"https://t.me/{CHANNEL_USERNAME.replace('@', '')}")
+    btn_check = InlineKeyboardButton("🔄 Check Join", callback_data="check_join")
+    keyboard.add(btn_link)
+    keyboard.add(btn_check)
+    return keyboard
+
+# Reply menu keyboard
 def get_main_menu():
-    markup = ReplyKeyboardMarkup(resize_keyboard=True)
-    markup.row(KeyboardButton("Balance 💰"), KeyboardButton("My account 👤"))
-    markup.row(KeyboardButton("Submit Gmail 📧"))
-    return markup
+    keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    keyboard.row("Register", "My account")
+    keyboard.row("Balance", "Help")
+    keyboard.row("Referral Program")
+    return keyboard
 
-# /start Command Handler (Directly opens menu, no force join)
+# Start command handler
 @dp.message_handler(commands=['start'])
-async def start_command(message: types.Message):
-    await message.answer("Welcome! The main menu is now active.", reply_markup=get_main_menu())
+async def send_welcome(message: types.Message):
+    user_id = message.from_user.id
+    
+    if not await check_channel_join(user_id):
+        await message.answer(
+            f"🚀 To use this bot, you must join our channel: {CHANNEL_USERNAME}",
+            reply_markup=get_join_keyboard()
+        )
+        return
 
-# Handling Text Messages (Menu Actions)
-@dp.message_handler(lambda message: message.text in ["Balance 💰", "My account 👤", "Submit Gmail 📧"])
+    await message.answer("Welcome back! Choose an option from the menu.", reply_markup=get_main_menu())
+
+# Callback query handler for checking join status
+@dp.callback_query_handler(text="check_join")
+async def process_check_join(callback_query: types.CallbackQuery):
+    user_id = callback_query.from_user.id
+    if await check_channel_join(user_id):
+        await bot.answer_callback_query(callback_query.id, "Thank you for joining!")
+        await bot.send_message(user_id, "Access granted! Welcome to the bot.", reply_markup=get_main_menu())
+    else:
+        await bot.answer_callback_query(callback_query.id, "You haven't joined yet!", show_alert=True)
+
+# Main menu buttons handler
+@dp.message_handler(lambda message: message.text in ["Register", "My account", "Balance", "Help", "Referral Program"])
 async def handle_menu(message: types.Message):
     user_id = message.from_user.id
-
-    if message.text == "Balance 💰":
-        await message.answer("💵 Current Balance: $0.00")
-    elif message.text == "My account 👤":
-        await message.answer(f"👤 Account ID: {user_id}\nStatus: Active")
-    elif message.text == "Submit Gmail 📧":
-        await message.answer("Please type your Gmail and Password in this format (Email:Password):")
-        dp.register_message_handler(process_gmail_submission, user_id=user_id)
-
-# Handler to process Gmail and send to your Admin ID
-async def process_gmail_submission(message: types.Message):
-    user_id = message.from_user.id
-    gmail_data = message.text
     
-    dp.message_handlers.unregister(process_gmail_submission)
-    
-    await message.answer("⏳ Your data has been submitted. Please wait for Admin approval.", reply_markup=get_main_menu())
-    
-    # Admin inline buttons
-    admin_markup = InlineKeyboardMarkup(row_width=2)
-    btn_approve = InlineKeyboardButton("✅ Approve", callback_data=f"approve_{user_id}")
-    btn_reject = InlineKeyboardButton("❌ Reject", callback_data=f"reject_{user_id}")
-    admin_markup.add(btn_approve, btn_reject)
-    
-    admin_text = (
-        "📥 **New Gmail Submission!**\n\n"
-        f"👤 User ID: `{user_id}`\n"
-        f"📝 Data: `{gmail_data}`\n\n"
-        "Click below to Approve or Reject this request."
-    )
-    
-    try:
-        await bot.send_message(chat_id=ADMIN_ID, text=admin_text, parse_mode="Markdown", reply_markup=admin_markup)
-    except Exception as e:
-        print(f"Failed to send notification to Admin. Error: {e}")
-
-# Admin Actions (Approve / Reject)
-@dp.callback_query_handler(lambda c: c.data.startswith(('approve_', 'reject_')))
-async def process_admin_action(callback_query: types.CallbackQuery):
-    action, target_user_id = callback_query.data.split('_')
-    
-    if callback_query.from_user.id != ADMIN_ID:
-        await bot.answer_callback_query(callback_query.id, "❌ You are not authorized to use this admin panel!", show_alert=True)
+    if not await check_channel_join(user_id):
+        await message.answer("Please join our channel first!", reply_markup=get_join_keyboard())
         return
-        
-    if action == 'approve':
-        await bot.edit_message_text(text="✅ You have Approved this request.", chat_id=ADMIN_ID, message_id=callback_query.message.message_id)
-        try:
-            await bot.send_message(target_user_id, "🎉 Congratulations! Your submitted Gmail has been approved by the admin.")
-        except Exception:
-            pass
-    elif action == 'reject':
-        await bot.edit_message_text(text="❌ You have Rejected this request.", chat_id=ADMIN_ID, message_id=callback_query.message.message_id)
-        try:
-            await bot.send_message(target_user_id, "❌ Sorry! Your submitted Gmail has been rejected by the admin.")
-        except Exception:
-            pass
+
+    text = message.text
+    if text == "Register":
+        await message.answer("Registration process started...")
+    elif text == "My account":
+        await message.answer(f"👤 Your Account\nID: {user_id}")
+    elif text == "Balance":
+        await message.answer("💰 Your current balance is: 0.00")
+    elif text == "Help":
+        await message.answer("ℹ️ Contact Support if you face any issues.")
+    elif text == "Referral Program":
+        await message.answer("🔗 Invite friends and earn benefits!")
+
+# Admin panel logic
+@dp.message_handler(commands=['admin'])
+async def admin_panel(message: types.Message):
+    if message.from_user.id == ADMIN_ID:
+        await message.answer("Welcome Boss! This is your secret admin panel.")
+    else:
+        await message.answer("Unauthorized access.")
 
 if __name__ == '__main__':
     executor.start_polling(dp, skip_updates=True)
