@@ -1,105 +1,68 @@
-import logging
+    import logging
 from aiogram import Bot, Dispatcher, executor, types
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
-# 1. Configuration
-API_TOKEN = '8924995974:AAEcOT5ChY4qlEl-1hguZJ_8nNFygqUOuZQ'
-ADMIN_ID = 5582627293  
-CHANNEL_USERNAME = '@A_ToolsX'  
+# Direct configuration
+BOT_TOKEN = "8924995974:AAEcOT5ChY4qlEl-1hguZJ_8nNFygqUOuZQ"
+ADMIN_ID = 5582627293
 
-# Setup logging
+# Logging setup
 logging.basicConfig(level=logging.INFO)
 
-# Initialize Bot and Dispatcher
-bot = Bot(token=API_TOKEN)
+# Initialize bot and dispatcher
+bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(bot)
 
-# Local memory to prevent checking the channel repeatedly
-verified_users = set()
+# Memory to track and filter duplicate messages
+seen_messages = set()
 
-# Function to check channel membership
-async def check_channel_join(user_id):
-    if user_id in verified_users:
-        return True
-    try:
-        member = await bot.get_chat_member(chat_id=CHANNEL_USERNAME, user_id=user_id)
-        if member.status in ['member', 'administrator', 'creator']:
-            verified_users.add(user_id)  # Save to memory so it doesn't check again
-            return True
-        return False
-    except Exception:
-        return False
-
-# Inline keyboard for joining the channel
-def get_join_keyboard():
-    keyboard = InlineKeyboardMarkup()
-    btn_link = InlineKeyboardButton("📢 Join Channel", url=f"https://t.me/{CHANNEL_USERNAME.replace('@', '')}")
-    btn_check = InlineKeyboardButton("🔄 Check Join", callback_data="check_join")
-    keyboard.add(btn_link)
-    keyboard.add(btn_check)
-    return keyboard
-
-# Reply menu keyboard
-def get_main_menu():
-    keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    keyboard.row("Register", "My account")
-    keyboard.row("Balance", "Help")
-    keyboard.row("Referral Program")
-    return keyboard
-
-# Start command handler
 @dp.message_handler(commands=['start'])
 async def send_welcome(message: types.Message):
-    user_id = message.from_user.id
+    user_name = message.from_user.full_name
     
-    if not await check_channel_join(user_id):
-        await message.answer(
-            f"🚀 To use this bot, you must join our channel: {CHANNEL_USERNAME}",
-            reply_markup=get_join_keyboard()
-        )
-        return
-
-    await message.answer("Welcome back! Choose an option from the menu.", reply_markup=get_main_menu())
-
-# Callback query handler for checking join status
-@dp.callback_query_handler(text="check_join")
-async def process_check_join(callback_query: types.CallbackQuery):
-    user_id = callback_query.from_user.id
-    if await check_channel_join(user_id):
-        await bot.answer_callback_query(callback_query.id, "Thank you for joining!")
-        await bot.send_message(user_id, "Access granted! Welcome to the bot.", reply_markup=get_main_menu())
-    else:
-        await bot.answer_callback_query(callback_query.id, "You haven't joined yet!", show_alert=True)
-
-# Main menu buttons handler
-@dp.message_handler(lambda message: message.text in ["Register", "My account", "Balance", "Help", "Referral Program"])
-async def handle_menu(message: types.Message):
-    user_id = message.from_user.id
+    keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    buttons = ["ℹ️ Profile", "⚙️ Help & Support"]
+    keyboard.add(*buttons)
     
-    if not await check_channel_join(user_id):
-        await message.answer("Please join our channel first!", reply_markup=get_join_keyboard())
-        return
-
-    text = message.text
-    if text == "Register":
-        await message.answer("Registration process started...")
-    elif text == "My account":
-        await message.answer(f"👤 Your Account\nID: {user_id}")
-    elif text == "Balance":
-        await message.answer("💰 Your current balance is: 0.00")
-    elif text == "Help":
-        await message.answer("ℹ️ Contact Support if you face any issues.")
-    elif text == "Referral Program":
-        await message.answer("🔗 Invite friends and earn benefits!")
-
-# Admin panel logic
-@dp.message_handler(commands=['admin'])
-async def admin_panel(message: types.Message):
+    # Show Admin Panel only to admin
     if message.from_user.id == ADMIN_ID:
-        await message.answer("Welcome Boss! This is your secret admin panel.")
-    else:
-        await message.answer("Unauthorized access.")
+        keyboard.add("👑 Admin Panel")
+
+    await message.reply(
+        f"Hello {user_name}!\nWelcome to the bot. Select an option below:",
+        reply_markup=keyboard
+    )
+
+@dp.message_handler(lambda message: message.text and not message.text.startswith('/'))
+async def filter_and_reply(message: types.Message):
+    text = message.text.strip()
+    
+    # Admin section
+    if text == "👑 Admin Panel" and message.from_user.id == ADMIN_ID:
+        await message.answer("👑 Welcome Admin! Duplicate filter system is active.")
+        return
+
+    # Menu handlers
+    if text == "ℹ️ Profile":
+        await message.answer(f"👤 Name: {message.from_user.full_name}\n🆔 ID: {message.from_user.id}")
+        return
+    elif text == "⚙️ Help & Support":
+        await message.answer("Please contact the admin for any support.")
+        return
+
+    # Duplicate filter system
+    if text in seen_messages:
+        logging.info(f"Ignored duplicate message: {text}")
+        return
+    
+    # Save message to memory
+    seen_messages.add(text)
+    
+    # Keep memory clean (limit to last 100 messages)
+    if len(seen_messages) > 100:
+        seen_messages.pop()
+
+    await message.answer(f"Request received: {text}")
 
 if __name__ == '__main__':
     executor.start_polling(dp, skip_updates=True)
-        
+                                        
