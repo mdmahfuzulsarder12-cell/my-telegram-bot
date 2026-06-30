@@ -10,7 +10,6 @@ from aiohttp import web
 # Configuration
 BOT_TOKEN = "8924995974:AAEcOT5ChY4qlEl-1hguZJ_8nNFygqUOuZQ"
 ADMIN_ID = 5582627293
-CHANNEL_ID = "@A_ToolsX" # Force join channel username
 
 logging.basicConfig(level=logging.INFO)
 
@@ -65,27 +64,12 @@ def init_user(user_id):
             "accounts": []
         }
 
-# --- Force Join Check Function ---
-async def check_joined(user_id: int) -> bool:
-    try:
-        member = await bot.get_chat_member(chat_id=CHANNEL_ID, user_id=user_id)
-        if member.status in ['member', 'administrator', 'creator']:
-            return True
-        return False
-    except Exception:
-        # If any error (like bot not admin in channel), allow user to proceed
-        return True
-
 # --- Start Command ---
 @dp.message_handler(commands=['start'], state='*')
 async def send_welcome(message: types.Message, state: FSMContext):
     await state.finish()
     init_user(message.from_user.id)
-    
-    if not await check_joined(message.from_user.id):
-        await message.answer(f"🚀 To use this bot, you must join our channel:\nhttps://t.me/A_ToolsX")
-        return
-        
+    # কোনো চ্যানেল চেক করবে না, সরাসরি মেনু আসবে
     await message.reply("Welcome! Please select an option:", reply_markup=get_main_menu())
 
 # --- Cancel Handler ---
@@ -97,10 +81,6 @@ async def cancel_process(message: types.Message, state: FSMContext):
 # --- Register Flow ---
 @dp.message_handler(lambda message: message.text == "Register", state='*')
 async def handle_register(message: types.Message):
-    if not await check_joined(message.from_user.id):
-        await message.answer(f"🚀 To use this bot, you must join our channel:\nhttps://t.me/A_ToolsX")
-        return
-        
     await message.answer(
         "Do you want us to generate a login and password for you or you already have an account?",
         reply_markup=get_register_menu()
@@ -108,10 +88,6 @@ async def handle_register(message: types.Message):
 
 @dp.message_handler(lambda message: message.text == "Submit account", state='*')
 async def submit_account_start(message: types.Message):
-    if not await check_joined(message.from_user.id):
-        await message.answer(f"🚀 To use this bot, you must join our channel:\nhttps://t.me/A_ToolsX")
-        return
-        
     await message.answer("Gamil AC...", reply_markup=get_back_menu())
     await BotStates.waiting_for_gmail.set()
 
@@ -240,7 +216,7 @@ async def handle_help(message: types.Message):
     except Exception:
         await message.answer(f"⚙️ Help Support:\nPlease contact the administrator directly.")
 
-# --- Render Port Binding Fix ---
+# --- Web Server Port Binding ---
 async def handle_health_check(request):
     return web.Response(text="Bot is running perfectly fine!")
 
@@ -261,5 +237,4 @@ async def main():
 
 if __name__ == '__main__':
     asyncio.run(main())
-    
     
